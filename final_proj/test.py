@@ -17,6 +17,8 @@ import pickle
 #     },
 # ]
 
+face_dict = {'LHY': 0, 'xN': 1, 'YuJu': 2}
+
 with open('faces.dat', 'rb') as f:
     known_face_list = pickle.load(f)
 
@@ -51,8 +53,7 @@ for fn in test_fn_list:
             distance, 4)) for face_data, distance in zip(known_face_list, face_distance_list)]
         print(f'辨識檔案: {fn}, 辨識結果: {result}, 特徵距離: {distance_with_name_list}')
         print(result)
-RED_COLOR = (200, 58, 76)
-WHITE_COLOR = (255, 255, 255)
+        feedback_id = face_dict[result]
 
 
 # def draw_locations(img, match_results):
