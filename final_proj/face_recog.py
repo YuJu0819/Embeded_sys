@@ -1,4 +1,6 @@
 from IPython.display import display
+from picamera import PiCamera
+from time import sleep
 from PIL import Image
 import cv2
 import numpy as np
@@ -16,6 +18,22 @@ import pickle
 #         'encode': None,
 #     },
 # ]
+
+
+def take_photo(file_path='image.jpg'):
+    camera = PiCamera()
+
+    try:
+        camera.start_preview()
+        sleep(2)  # Camera warm-up time
+        camera.capture(file_path)
+        print(f"Photo taken and saved to {file_path}")
+        target_img = cv2.imread(file_path)
+        target_img = cv2.cvtColor(target_img, cv2.COLOR_BGR2RGB)
+    finally:
+        camera.stop_preview()
+        camera.close()
+    return target_img
 
 
 def recognition(name, target_img):
@@ -55,6 +73,8 @@ def recognition(name, target_img):
 
 
 if __name__ == "__main__":
-    target_img = cv2.imread('hy-test.jpg')
-    target_img = cv2.cvtColor(target_img, cv2.COLOR_BGR2RGB)
+
+    # target_img = cv2.imread('hy-test.jpg')
+    # target_img = cv2.cvtColor(target_img, cv2.COLOR_BGR2RGB)\
+    target_img = take_photo()
     recognition('LHY', target_img)
