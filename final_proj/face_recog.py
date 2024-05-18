@@ -28,14 +28,8 @@ def recognition(name, target_img):
         img = cv2.imread(data['filename'])
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         data['encode'] = face_recognition.face_encodings(img)[0]
-    # print(known_face_list)
     known_face_encodes = [data['encode'] for data in known_face_list]
     tolerance = 0.5
-    # test_fn_list = ['hy-test.jpg']
-
-    # for fn in test_fn_list:
-    # target_img = cv2.imread(fn)
-    # target_img = cv2.cvtColor(target_img, cv2.COLOR_BGR2RGB)
 
     cur_face_locs = face_recognition.face_locations(target_img)
     cur_face_encodes = face_recognition.face_encodings(
@@ -53,9 +47,14 @@ def recognition(name, target_img):
 
         distance_with_name_list = [(face_data['name'], round(
             distance, 4)) for face_data, distance in zip(known_face_list, face_distance_list)]
-        # print(
-        #     f'辨識檔案: {fn}, 辨識結果: {result}, 特徵距離: {distance_with_name_list}')
-        print(result)
+
         output['name'] = result
         output['bool'] = name == result
-        return output
+        print(output)
+        return output  # {'name': 'LHY', 'bool': True}
+
+
+if __name__ == "__main__":
+    target_img = cv2.imread('hy-test.jpg')
+    target_img = cv2.cvtColor(target_img, cv2.COLOR_BGR2RGB)
+    recognition('LHY', target_img)
