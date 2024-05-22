@@ -6,6 +6,9 @@ import cv2
 import numpy as np
 import face_recognition
 import pickle
+import socket
+import json
+import matplotlib.pyplot as plt
 # known_face_list = [
 #     {
 #         'name': 'YuJu',
@@ -18,6 +21,12 @@ import pickle
 #         'encode': None,
 #     },
 # ]
+HOST = '172.20.10.14'  # IP address
+PORT = 4000  # Port to listen on (use ports > 1023)
+plt.ion()
+legend_shown = False
+operation = []
+dataTime = []
 
 
 def take_photo(file_path='image.jpg'):
@@ -78,3 +87,32 @@ if __name__ == "__main__":
     # target_img = cv2.cvtColor(target_img, cv2.COLOR_BGR2RGB)\
     target_img = take_photo()
     recognition('LHY', target_img)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((HOST, PORT))
+        s.listen()
+        print("Starting server at: ", (HOST, PORT))
+        conn, addr = s.accept()
+        with conn:
+            print("Connected at", addr)
+            while True:
+                data = conn.recv(1024).decode('utf-8')
+                print("Received from socket server:", data)
+                if (data.count('{') != 1):
+                    # Incomplete data are received.
+                    choose = 0
+                    buffer_data = data.split('}')
+                    while buffer_data[choose][0] != '{':
+                        choose += 1
+                    data = buffer_data[choose] + '}'
+                obj = json.loads(data)
+                dataTime.append(obj['s'])
+                data.append(obj['x'])
+                if obj['x'] == 1:
+                    target_img = take_photo()
+                    recognition('LHY', target_img)
+                elif obj['x'] == 2:
+                    pass
+                elif obj['x'] == 3:
+                    pass
+                elif obj['x'] == 4:
+                    pass
