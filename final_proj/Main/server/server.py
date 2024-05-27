@@ -3,7 +3,7 @@ import threading
 import csv
 
 # Global state
-current_mode = "preparing"
+current_mode = "general"
 current_issue = ""
 lock = threading.Lock()
 
@@ -116,12 +116,15 @@ def handle_command_client(client_socket, address):
             mode = command.split(", ")[0]
             print(f"Mode: {mode}" )
             with lock:
-                if mode == "preparing":
-                    current_mode = "preparing"
+                if mode == "general":
+                    current_mode = "general"
+                    print(f"Mode changed to {current_mode}")
                 elif mode == "meeting":
                     current_mode = "meeting"
+                    print(f"Mode changed to {current_mode}")
                 elif mode == "voting":
                     current_mode = "voting"
+                    print(f"Mode changed to {current_mode}")
                     issue = command.split(", ")[1]
                     new_issue(issue)
                     # Set a timer to end the voting
@@ -149,7 +152,7 @@ def handle_rpi_client(client_socket, address):
             message = data.decode()
             message = message.split(", ")
             match current_mode:
-                case "preparing":
+                case "general":
                     if message[0] == "face verified":
                         name = message[1]
                         update_attendance(name)
