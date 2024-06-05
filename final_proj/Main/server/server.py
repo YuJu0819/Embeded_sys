@@ -1,140 +1,153 @@
 import socket
 import threading
+import time
 import csv
-
+import cv2
+import numpy as np
+import pyaudio
+from utils import initialize_csv, attendant_signin, attendant_vote, verify
 # Global state
 current_mode = "general"
 current_issue = ""
+is_voting = False
+is_speaking = False
 lock = threading.Lock()
 
+STOP_SIGNAL = b"__STOP__"
+
+# Audio Configuration
+CHUNK = 1024
+FORMAT = pyaudio.paInt16
+CHANNELS = 2
+RATE = 44100
+ 
+allowed_speakers = []
+speaking_duration = 0
+
 # CSV file setup
+attendant_file = "attendants.txt"
 csv_file = "meeting_database.csv"
 csv_lock = threading.Lock()
 
-# Load attendants list
-attendants = []
+def recv_image(client_socket):
+    # Receive image data in chunks
+    image_data = b''
+    while True:
+        chunk = client_socket.recv(1024)
+        if STOP_SIGNAL in chunk:
+            chunk = chunk.replace(STOP_SIGNAL, b'')
+            image_data += chunk
+            break
+        image_data += chunk
 
-def initialize_attendants():
-    global attendants
+    # Decode the image data to a numpy array
+    nparr = np.frombuffer(image_data, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    print("Image received successfully")
+    return img 
+
+def start_speaking(client_socket, name):
+    global speaking_duration, is_speaking
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT,
+                    channels=CHANNELS,
+                    rate=RATE,
+                    output=True,
+                    frames_per_buffer=CHUNK)
+    
+    start_time = time.time()
+    is_speaking = True
     try:
-        with open("attendants.txt", "r") as file:
-            attendants = [line.strip() for line in file.readlines()]
-        print(f"Attendants loaded: {attendants}")
-    except FileNotFoundError:
-        print("Error: 'attendants.txt' file not found.")
-        attendants = []
-
-def initialize_csv():
-    with open(csv_file, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(["Name", "Attenandance"])
-        for attendant in attendants:
-            writer.writerow([attendant, "No"])
-    print(f"CSV file {csv_file} initialized")
-
-# Functions to update the CSV file
-def update_attendance(name):
-    global attendants
-    with csv_lock:
-        with open(csv_file, mode='r') as file:
-            reader = csv.reader(file)
-            rows = list(reader)
-        with open(csv_file, mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["Name", "Attendance"])
-            for row in rows[1:]:
-                if row[0] == name:
-                    row[1] = "Yes"
-                writer.writerow(row)
-    print(f"Attendance updated for {name}")
-
-def new_issue(issue, default_value=""):
-    global current_issue
-    current_issue = issue
-    with csv_lock:
-        with open(csv_file, mode='r', newline='') as file:
-            reader = csv.reader(file)
-            rows = list(reader)
-
-        # Add the new column to the header
-        if current_issue not in rows[0]:
-            rows[0].append(current_issue)
-
-            # Add the default value for the new column to each row
-            for row in rows[1:]:
-                row.append(default_value)
-
-            # Write the updated content back to the CSV file
-            with open(csv_file, mode='w', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerows(rows)
-            print(f"current_issue '{current_issue}' added to the CSV file")
-        else:
-            print(f"current_issue '{current_issue}' already exists in the CSV file")
-
-def vote_for_issue(name, value):
-    with csv_lock:
-        with open(csv_file, mode='r', newline='') as file:
-            reader = csv.reader(file)
-            rows = list(reader)
-
-        # Find the row corresponding to the name
-        for row in rows[1:]:
-            if row[0] == name:
-                # Find the column corresponding to the issue
-                for i, header in enumerate(rows[0]):
-                    if header == current_issue:
-                        # Update the value in the row
-                        row[i] = value
-                        break
+        client_socket.sendall(f"{speaking_duration}".encode())
+        while True:
+            data = client_socket.recv(1024)
+            if not data or data == STOP_SIGNAL:
                 break
+            stream.write(data)
+            
+    except ConnectionResetError:
+        print("Connection with client was reset")
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        allowed_speakers.remove(name)
+        is_speaking = False
+        print(f"{name} stopped speaking")
 
-        # Write the updated content back to the CSV file
+
+def start_voting(issue, duration=10):
+    global current_issue, current_state, is_voting
+    current_issue = issue
+    current_state = "voting"
+    with csv_lock:
+        with open(csv_file, mode='r', newline='') as file:
+            reader = csv.reader(file)
+            rows = list(reader)
+        rows[0].append(current_issue)
+        for row in rows[1:]:
+            row.append(" ")
         with open(csv_file, mode='w', newline='') as file:
             writer = csv.writer(file)
             writer.writerows(rows)
-        print(f"Issue '{current_issue}' updated for {name}")
-
-# Functions to handle mode changes
-def voting_end():
-    global current_mode
-    with lock:
-        current_mode = "meeting"
-    print(f"Voting ended. Mode changed to {current_mode}")
+    print(f"Voting started for issue '{current_issue}' for {duration} seconds")
+    is_voting = True
+    time.sleep(duration)
+    is_voting = False
+    print(f"Voting ended for issue '{current_issue}'")
 
 # Functions to handle client connections
 def handle_command_client(client_socket, address):
-    global current_mode
+    global current_mode, speaking_duration
     print(f"Command connection established with {address}")
     try:
         while True:
             data = client_socket.recv(1024)
             if not data:
                 break
+            if is_voting:
+                client_socket.sendall(b"Voting in progress, please wait")
+                break
             command = data.decode()
+            command = command.split(" ")
             print(f"Received command: {command}")
-            mode = command.split(", ")[0]
-            print(f"Mode: {mode}" )
-            with lock:
-                if mode == "general":
-                    current_mode = "general"
-                    print(f"Mode changed to {current_mode}")
-                elif mode == "meeting":
+            if current_mode == "general":
+                if command[0] == "start": # receive command to start meeting
                     current_mode = "meeting"
-                    print(f"Mode changed to {current_mode}")
-                elif mode == "voting":
-                    current_mode = "voting"
-                    print(f"Mode changed to {current_mode}")
-                    issue = command.split(", ")[1]
-                    new_issue(issue)
-                    # Set a timer to end the voting
-                    timer = threading.Timer(10, voting_end)
-                    timer.start()
+                    notification = "Meeting started"
+                    print(f"{notification}, Mode changed to '{current_mode}'")
+                    client_socket.sendall(notification.encode())
+
                 else:
                     client_socket.sendall(b"Invalid command")
                     continue
-            print(f"Mode changed to {current_mode} by {address}")
-            client_socket.sendall(f"Mode changed to {current_mode}".encode())
+
+            elif current_mode == "meeting":
+                if command[0] == "end":
+                    current_mode = "general"
+                    notification = "Meeting ended"
+                    print(f"{notification}, Mode changed to '{current_mode}'")  
+                    client_socket.sendall(notification.encode())
+
+                elif command[0] == "voting":
+                    issue = command[1]
+                    duration = int(command[2]) if len(command) > 2 else 10
+                    client_socket.sendall(f"Voting started for issue '{issue}'... ends in {duration} secconds".encode())
+                    threading.Thread(target=start_voting, args=(issue, duration)).start()
+
+                elif command[0] == "speaking":
+                    name = command[1]
+                    speaking_duration = float(command[2]) if len(command) > 2 else 10
+                    allowed_speakers.append(name)
+                    client_socket.sendall(f"{name} is allowed to speak".encode())
+                    
+                else:
+                    client_socket.sendall(b"Invalid command")
+                    continue
+            else:   
+                client_socket.sendall(b"Something went wrong...")
+                continue
     except ConnectionResetError:
         print(f"Command connection with {address} was reset")
     finally:
@@ -150,27 +163,59 @@ def handle_rpi_client(client_socket, address):
             if not data:
                 break
             message = data.decode()
-            message = message.split(", ")
-            match current_mode:
-                case "general":
-                    if message[0] == "face verified":
-                        name = message[1]
-                        update_attendance(name)
-                case "meeting":
-                    if message[0] == "mic on":
-                        pass
-                case "voting":
-                    if message[0] == "vote":
-                        name = message[1]
-                        value = message[2]
-                        vote_for_issue(name, value)
-            with lock:
-                mode = current_mode
-            response = f"Received in {mode} mode: {message}"
-            print(f"Received from {address} : {message}")
-            client_socket.sendall(response.encode())
+            message = message.split(" ")
+            print(f"Received message: {message}")
+
+            ### Handle request received before meeting starts
+            if current_mode == "general": 
+                if message[0] == "signin": # receive request to sign in
+                    name = message[1]
+                    client_socket.sendall(f"Please send {name}'s image for verification".encode())
+                    image = recv_image(client_socket)
+                    if verify(name, image): # verify the image and sign in for the attendant
+                        print(f"Attendant '{name}' signed in!")
+                        attendant_signin(name, csv_file, csv_lock) 
+                        client_socket.sendall(b"Signin successful")
+                    else:
+                        client_socket.sendall(b"Signin failed")
+                else:
+                    client_socket.sendall(b"Invalid command")
+            
+            ### Handle request received during meeting
+            elif current_mode == "meeting":
+                if message[0] == "speaking" and not is_voting and not is_speaking: # receive request to start speaking
+                    name = message[1]
+                    if name in allowed_speakers: # check if the attendant is allowed to speak
+                        client_socket.sendall(b"Start speaking")
+                        start_speaking(client_socket, name) 
+                    else:
+                        client_socket.sendall(f"Wait for approved".encode())
+
+                elif message[0] == "vote" and is_voting: # receive request to vote
+                    name = message[1]
+                    value = message[2]
+                    attendant_vote(name, value, csv_lock, csv_file, current_issue)
+                    client_socket.sendall(b"Vote received")
+                    pass
+
+                elif message[0] == "signin": # handle late sign in
+                    name = message[1]
+                    client_socket.sendall(f"Please send {name}'s image for verification".encode())
+                    image = recv_image(client_socket)
+                    if verify(name, image):
+                        print(f"Attendant '{name}' signed in!")
+                        attendant_signin(name, csv_file, csv_lock, late=True)
+                        client_socket.sendall(b"Signin successful")
+                    else:
+                        client_socket.sendall(b"Signin failed")
+                else:
+                    client_socket.sendall(b"Invalid command")
+            else:
+                client_socket.sendall(b"Something went wrong...")
     except ConnectionResetError:
         print(f"Info connection with {address} was reset")
+    except Exception as e:
+        print(f"An error occurred: {e}")
     finally:
         client_socket.close()
         print(f"Info connection with {address} closed")
@@ -181,15 +226,18 @@ def start_server(port, handler):
     server_socket.listen(5)
     print(f"Server listening on port {port}")
     while True:
-        client_socket, address = server_socket.accept()
-        client_handler = threading.Thread(target=handler, args=(client_socket, address))
-        client_handler.start()
+        try:
+            client_socket, address = server_socket.accept()
+            client_handler = threading.Thread(target=handler, args=(client_socket, address))
+            client_handler.start()
+        except socket.error:
+            break
+    server_socket.close()
 
 if __name__ == "__main__":
 
     # Load attendants list and initialize CSV file
-    initialize_attendants()
-    initialize_csv()
+    initialize_csv(attendant_file, csv_file, csv_lock)
 
     # Define ports
     command_port = 5000
