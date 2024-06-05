@@ -16,9 +16,9 @@ lock = threading.Lock()
 STOP_SIGNAL = b"__STOP__"
 
 # Audio Configuration
-CHUNK = 1024
+CHUNK = 128
 FORMAT = pyaudio.paInt16
-CHANNELS = 2
+CHANNELS = 1
 RATE = 44100
  
 allowed_speakers = []
@@ -150,6 +150,8 @@ def handle_command_client(client_socket, address):
                 continue
     except ConnectionResetError:
         print(f"Command connection with {address} was reset")
+    except Exception as e:
+        print(f"An error occurred: {e}")
     finally:
         client_socket.close()
         print(f"Command connection with {address} closed")
