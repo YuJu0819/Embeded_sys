@@ -10,7 +10,7 @@ from utils import initialize_csv, attendant_signin, attendant_vote, verify
 current_mode = "general"
 current_issue = ""
 is_voting = False
-is_speaking = False
+allowed_speaking = False
 lock = threading.Lock()
 
 STOP_SIGNAL = b"__STOP__"
@@ -21,13 +21,11 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
  
-allowed_speakers = []
 speaking_duration = 0
 
 # CSV file setup
 attendant_file = "attendants.txt"
 csv_file = "meeting_database.csv"
-csv_lock = threading.Lock()
 
 def recv_image(client_socket):
     # Receive image data in chunks
@@ -55,9 +53,6 @@ def start_speaking(client_socket, name):
                     rate=RATE,
                     output=True,
                     frames_per_buffer=CHUNK)
-    
-    start_time = time.time()
-    is_speaking = True
     try:
         client_socket.sendall(f"{speaking_duration}".encode())
         while True:
@@ -72,7 +67,6 @@ def start_speaking(client_socket, name):
         stream.stop_stream()
         stream.close()
         p.terminate()
-        allowed_speakers.remove(name)
         is_speaking = False
         print(f"{name} stopped speaking")
 
@@ -81,16 +75,15 @@ def start_voting(issue, duration=10):
     global current_issue, current_state, is_voting
     current_issue = issue
     current_state = "voting"
-    with csv_lock:
-        with open(csv_file, mode='r', newline='') as file:
-            reader = csv.reader(file)
-            rows = list(reader)
-        rows[0].append(current_issue)
-        for row in rows[1:]:
-            row.append(" ")
-        with open(csv_file, mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(rows)
+    with open(csv_file, mode='r', newline='') as file:
+        reader = csv.reader(file)
+        rows = list(reader)
+    rows[0].append(current_issue)
+    for row in rows[1:]:
+        row.append(" ")
+    with open(csv_file, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(rows)
     print(f"Voting started for issue '{current_issue}' for {duration} seconds")
     is_voting = True
     time.sleep(duration)
@@ -99,7 +92,7 @@ def start_voting(issue, duration=10):
 
 # Functions to handle client connections
 def handle_command_client(client_socket, address):
-    global current_mode, speaking_duration
+    global current_mode, speaking_duration, allowed_speaking
     print(f"Command connection established with {address}")
     try:
         while True:
@@ -137,11 +130,9 @@ def handle_command_client(client_socket, address):
                     threading.Thread(target=start_voting, args=(issue, duration)).start()
 
                 elif command[0] == "speaking":
-                    name = command[1]
-                    speaking_duration = float(command[2]) if len(command) > 2 else 10
-                    allowed_speakers.append(name)
-                    client_socket.sendall(f"{name} is allowed to speak".encode())
-                    
+                    allowed_speaking = True
+                    speaking_duration = float(command[1]) if len(command) > 1 else 10
+                    client_socket.sendall(f"Allow speaking".encode())
                 else:
                     client_socket.sendall(b"Invalid command")
                     continue
@@ -157,7 +148,7 @@ def handle_command_client(client_socket, address):
         print(f"Command connection with {address} closed")
 
 def handle_rpi_client(client_socket, address):
-    global current_mode
+    global current_mode, allowed_speaking, is_voting
     print(f"Info connection established with {address}")
     try:
         while True:
@@ -176,7 +167,7 @@ def handle_rpi_client(client_socket, address):
                     image = recv_image(client_socket)
                     if verify(name, image): # verify the image and sign in for the attendant
                         print(f"Attendant '{name}' signed in!")
-                        attendant_signin(name, csv_file, csv_lock) 
+                        attendant_signin(name, csv_file) 
                         client_socket.sendall(b"Signin successful")
                     else:
                         client_socket.sendall(b"Signin failed")
@@ -185,18 +176,18 @@ def handle_rpi_client(client_socket, address):
             
             ### Handle request received during meeting
             elif current_mode == "meeting":
-                if message[0] == "speaking" and not is_voting and not is_speaking: # receive request to start speaking
+                if message[0] == "speaking" and not is_voting: # receive request to start speaking
                     name = message[1]
-                    if name in allowed_speakers: # check if the attendant is allowed to speak
+                    if allowed_speaking: # check if speaking is allowed
                         client_socket.sendall(b"Start speaking")
-                        start_speaking(client_socket, name) 
+                        start_speaking(client_socket, name)
                     else:
-                        client_socket.sendall(f"Wait for approved".encode())
+                        client_socket.sendall(f"Wait for discussion".encode())
 
                 elif message[0] == "vote" and is_voting: # receive request to vote
                     name = message[1]
                     value = message[2]
-                    attendant_vote(name, value, csv_lock, csv_file, current_issue)
+                    attendant_vote(name, value, csv_file, current_issue)
                     client_socket.sendall(b"Vote received")
                     pass
 
@@ -206,7 +197,7 @@ def handle_rpi_client(client_socket, address):
                     image = recv_image(client_socket)
                     if verify(name, image):
                         print(f"Attendant '{name}' signed in!")
-                        attendant_signin(name, csv_file, csv_lock, late=True)
+                        attendant_signin(name, csv_file, late=True)
                         client_socket.sendall(b"Signin successful")
                     else:
                         client_socket.sendall(b"Signin failed")
@@ -239,7 +230,7 @@ def start_server(port, handler):
 if __name__ == "__main__":
 
     # Load attendants list and initialize CSV file
-    initialize_csv(attendant_file, csv_file, csv_lock)
+    initialize_csv(attendant_file, csv_file)
 
     # Define ports
     command_port = 5000

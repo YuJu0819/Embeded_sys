@@ -1,7 +1,7 @@
 import pandas as pd
 def vote_count():
     # read the test data
-    df = pd.read_csv('data/test.csv')
+    df = pd.read_csv('server/meeting_database.csv')
     # convert the last column to a list
     vote = df.iloc[:,-1].values.tolist()
     # build a dictionary to store the vote count

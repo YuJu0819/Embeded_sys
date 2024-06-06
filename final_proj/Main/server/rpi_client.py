@@ -2,16 +2,17 @@ import socket
 import pyaudio
 import time
 import threading
+import subprocess
 
 # Main server address and port
-MAIN_SERVER_IP = '127.0.0.1'  # Change this to your server IP address
+MAIN_SERVER_IP = 'devin-ASUS-TUF-Gaming-A15-FA507XI-FA507XI.local'  # Change this to your server IP address
 MAIN_SERVER_PORT = 6000       # Change this to your server port number
 
 # STM32 server port
 STM32_PORT = 12345
 
 STOP_SIGNAL = b"__STOP__"
-NAME = "devin"
+NAME = "yuju"
 
 def vote(client_socket, value):
     """
@@ -28,10 +29,19 @@ def vote(client_socket, value):
     except Exception as e:
         print("An error occurred while sending voting request:", e)
 
+def take_picture():
+    try:
+        # Execute the libcamera-still command to take a picture
+        subprocess.run(["libcamera-still", "-e", "png", "-o", f"{NAME}.png"], check=True)
+        print(f"Picture taken and saved as {NAME}.png")
+    except subprocess.CalledProcessError as e:
+        print(f"An error occurred while taking the picture: {e}")
+
 def signin(client_socket):
     """
     Send a message and an image to the server using the same socket.
     """
+    take_picture()
     message = f"signin {NAME}"
     image_path = f"{NAME}.jpg"
     try:
@@ -62,7 +72,7 @@ def speak(client_socket):
     """
     Send audio data to the server using the same socket.
     """
-    CHUNK = 1024
+    CHUNK = 128
     FORMAT = pyaudio.paInt16
     CHANNELS = 2
     RATE = 44100
@@ -100,30 +110,36 @@ def speak(client_socket):
 def main():
     global stored_vote_value
     stored_vote_value = None
+    signed = False
 
-
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_address = (MAIN_SERVER_IP, MAIN_SERVER_PORT)
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client_socket.connect(server_address)
     print(f"Connected to {server_address}")
     stm32_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    
     stm32_server_socket.bind(('0.0.0.0', STM32_PORT))
-    stm32_server_socket.listen(5)
+    stm32_server_socket.listen()
     print(f"STM32 server listening on port {STM32_PORT}")
+    # vote(client_socket, "yes")
+
     try:
         while True:
             stm32_socket, addr = stm32_server_socket.accept()
             print(f"Connection from STM32 at {addr}")
             while True:
                 message = stm32_socket.recv(1024).decode()
-                message = message.split(" ")
-                if message[0] == "vote":
-                    value = message[1]
-                    vote(client_socket, value)
-                elif message[0] == "signin":
-                    signin(client_socket)
-                elif message[0] == "speak":
-                    speak(client_socket)
+                if message == "2":
+                    if not signed:
+                        signin(client_socket)
+                        signed = True
+                    else:
+                        speak(client_socket)
+                elif message == "1":
+                    vote(client_socket, "no")
+                elif message == "0":
+                    vote(client_socket, "yes")
                 else:
                     print("Invalid message received from STM32:", message)
                     

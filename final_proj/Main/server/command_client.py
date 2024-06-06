@@ -6,12 +6,8 @@ def send_message(port, message):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect(server_address)
-            print(f"Connected to {server_address}")
-            while True:
-                message = input("Enter a command: ")
-                sock.sendall(message.encode())
-                response = sock.recv(1024)
-                print(f"Received response: {response.decode()}")
+            sock.sendall(message.encode())
+            response = sock.recv(1024)
     except ConnectionRefusedError:
         print("Connection refused. Ensure the server is running and the port is correct.")
     except Exception as e:
