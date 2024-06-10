@@ -18,7 +18,7 @@ STOP_SIGNAL = b"__STOP__"
 # Audio Configuration
 CHUNK = 128
 FORMAT = pyaudio.paInt16
-CHANNELS = 1
+CHANNELS = 2
 RATE = 44100
  
 speaking_duration = 0

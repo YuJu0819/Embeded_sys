@@ -65,7 +65,7 @@ def main():
                 elif Input[1] == "-ps":
                     print("Print the settings of the current vote")
                 elif Input[1] == "-v":
-                    print("Start the voting process for: ")
+                    print("Start the voting process for: ", issue)
                     send_message(port, f"voting {issue} {voting_duration}")
                 elif Input[1] == "-t":
                     voting_duration = int(Input[2])

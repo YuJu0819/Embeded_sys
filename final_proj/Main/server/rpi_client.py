@@ -5,14 +5,14 @@ import threading
 import subprocess
 
 # Main server address and port
-MAIN_SERVER_IP = 'devin-ASUS-TUF-Gaming-A15-FA507XI-FA507XI.local'  # Change this to your server IP address
+MAIN_SERVER_IP = '0.0.0.0'  # Change this to your server IP address
 MAIN_SERVER_PORT = 6000       # Change this to your server port number
 
 # STM32 server port
 STM32_PORT = 12345
 
 STOP_SIGNAL = b"__STOP__"
-NAME = "yuju"
+NAME = "yuju" # attendat name
 
 def vote(client_socket, value):
     """
