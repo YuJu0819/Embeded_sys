@@ -1,7 +1,7 @@
 import argparse
 from cmd.help import print_help
 from cmd.vote import vote_count
-from server.command_client import send_message
+from cmd.command_client import send_message
 import pandas as pd
 
 
